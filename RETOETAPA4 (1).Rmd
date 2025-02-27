@@ -1,0 +1,465 @@
+---
+title: "retoEtapa3"
+author: "Adalía Fernanda Aneiros Gutiérrez"
+date: "2023-08-30"
+output:
+  word_document: default
+  html_document: default
+---
+
+## **Análisis de interdependencia:**
+
+### Análisis multivariado (exploración de datos):
+
+Lectura de datos
+
+```{r}
+# Guardar en 'm' el dataset que incluye la variable dependiente categórica 'Planta'
+m = read.csv("datosetapa4.csv")
+head(m)
+```
+
+```{r}
+# Eliminar la columna con el índice y la dependiente, pues queremos explorar las variables independientes. 
+df = subset(m, select = -c(X, Planta))
+head(df)
+```
+
+Matriz de correlaciones:
+
+```{r}
+# Matriz de correlación entre las variables independientes
+cor = cor(df)
+data.frame(cor)
+```
+
+Heatmap de matriz de correlaciones:
+
+```{r}
+# Heatmap de la matriz de correlación para una mejor visualización
+heatmap(cor, main="Heatmap de la matriz de correlaciones", Rowv = NA, Colv = NA)
+```
+
+Matriz de varianzas - covarianzas:
+
+```{r}
+# Matriz de varianzas y covarianzas entre las variables independientes
+cov = cov(df)
+data.frame(cov)
+```
+
+Distribución de los datos:
+
+```{r}
+# Ver gráficamente la distribución de los datos
+boxplot(df)
+```
+
+**Comprobación de normalidad en los datos:**
+
+Se utiliza la prueba de Anderson-darling pues se cuenta con una población grande de datos.
+
+$H_0:$ Los datos siguen distribución normal
+
+$H_1:$ Los datos no siguen distribución normal
+
+```{r}
+# Prueba de Anderson-Darling
+library(nortest)
+ad.test(unlist(df))
+```
+
+Como el p-value es menor a $\alpha$, se rechaza la hipótesis nula, por lo que se puede suponer que los datos no siguen una distribución normal.
+
+### **Análisis factorial:**
+
+Prueba de KMO para decidir si existe suficiente correlación entre las variables para hacer un análisis factorial:
+
+```{r}
+library(psych)
+kmo = KMO(df)
+kmo
+
+cat("\n Estadístico de prueba resultante:", kmo$MSA)
+```
+
+Aunque el valor resultante es mediocre, puede considerarse que existe una correlación considerable entre las variables.
+
+Implementación del modelo:
+
+```{r}
+# Gráfico de Cattel para elección de número de factores
+library(psych)
+scree(cor) 
+```
+
+```{r}
+# Ajuste del modelo de análisis factorial
+library(GPArotation)
+fa = fa(df, nfactors = 2, rotate = "varimax", fm ="ml")
+fa$loadings
+```
+
+Combinaciones lineales resultantes:
+
+ML2 = -0.27(NOX) + 0.798(O3) + 0.335(PM10) - 0.707(RH) + 0.406(SR) + 0.612(TOUT) + 0.518(WSR)
+
+ML1 = 0.960(NOX) + 0.559(PM10) - 0.142(RH) + 0.169(SR) - 0.135(TOUT) - 0.200(WSR) + 0.173(WDR)
+
+Matriz de datos con Análisis Factorial:
+
+```{r}
+# Creación de una matriz de datos con los valores del análisis factorial y la variable dependiente 'Planta'. 
+matrizCoef = matrix(c(-0.27, 0.798, 0.335, -0.707, 0.406, 0.612, 0.518, 0, 0.96, 0 , 0.559, -0.142, 0.169, -0.135, -0.2, 0.173), ncol = 2)
+matrizOrig =as.matrix(df)
+nuevodf = matrizOrig %*% matrizCoef
+df_fact = data.frame(nuevodf, m$Planta)
+names(df_fact) = c("ML2", "ML1", "Planta")
+df_fact
+```
+
+## Análisis de dependencia:
+
+### **Análisis Discriminante (usando los factores resultantes del Análisis Factorial)**
+
+Visualización de los datos por Planta
+
+```{r}
+#Graficos de dispersion con el color de acuerdo a la Planta
+
+library(MASS)
+lookup = c("1"='blue',"2"='green', "3"='orange', "4"='red', "5"='black')
+col.ind = lookup[df_fact$Planta]
+plot(df_fact[-3], pch=21, bg=col.ind, col="gray", main="Visualización de los datos por Planta")
+nombres_plantas = c("Apodaca", "Escobedo", "Garcia", "San Pedro", "Santa Catarina")
+colores = c("blue", "green", "orange", "red", "black")
+legend("topright", legend = nombres_plantas, pch=21, pt.bg = colores, col="gray")
+```
+
+Ajustar el modelo:
+
+```{r}
+# Modelo de análisis discriminante donde la variable que se utilizará para agrupar es 'Planta'
+lda.model=lda(Planta~., data=df_fact)
+lda.model
+```
+
+Predicciones del modelo
+
+```{r}
+predicted=predict(lda.model)
+head(predicted$x)
+```
+
+Forma de clasificación de los discriminantes lineales por Planta
+
+```{r}
+# Clasificaciones hechas por el modelo con el color de acuerdo a la Planta
+lookup2=c("1"='blue',"2"='green', "3"='orange', "4"='red', "5"='black')
+col.ind2=lookup2[predicted$class]
+plot(df_fact[-3], pch=21, bg=col.ind2, col="gray", main="Clasificación de los Discriminantes Lineales por Planta")
+legend("topright", legend = nombres_plantas, pch=21, pt.bg = colores, col="gray")
+```
+
+Calidad de la predicción
+
+```{r}
+# Matriz de contingencia
+table(pred=predicted$class, true=df_fact$Planta)
+
+# Porcentaje de observaciones clasificadas erróneamente
+1-mean(predicted$class==df_fact$Planta)
+```
+
+Validación de los supuestos
+
+```{r}
+par(mfrow=c(1,2))
+plot(density(df_fact$ML1), main = "Density plot of ML1", xlab = "ML1")
+plot(density(df_fact$ML1), main = "Density plot of ML2", xlab = "ML2")
+```
+
+Distribución de NOx y distancias entre las estaciones y el aeropuerto
+
+```{r}
+# Cargar las bibliotecas necesarias
+library(dplyr)
+library(ggplot2)
+  
+# Coordenadas geográficas de las estaciones meteorológicas
+coordenadas = data.frame(
+  Planta = c(1, 2, 3, 4, 5),
+  Estacion = c("Apodaca", "Escobedo", "García", "San Pedro", "Santa Catarina"),
+  Latitud = c(25.7777, 25.80183, 25.80331, 25.6576, 25.6752),
+  Longitud = c(-100.18839, -100.31473, -100.58944, -100.4024, -100.4602)
+)
+# Crear una función para calcular la distancia haversine entre dos puntos
+haversine = function(lat1, lon1, lat2, lon2) {
+# Radio de la Tierra en kilómetros
+  r <- 6371
+      
+  # Convertir las latitudes y longitudes de grados a radianes
+  lat1 = lat1 * pi / 180
+  lon1 = lon1 * pi / 180
+  lat2 = lat2 * pi / 180
+  lon2 = lon2 * pi / 180
+      
+  # Diferencia entre las latitudes y longitudes
+  dlat = lat2 - lat1
+  dlon = lon2 - lon1
+      
+  # Fórmula haversine
+  a = sin(dlat/2)^2 + cos(lat1) * cos(lat2) * sin(dlon/2)^2
+  c = 2 * atan2(sqrt(a), sqrt(1 - a))
+  distance = r * c
+    
+  return(distance)
+}
+  
+  # Calcular las distancias entre todas las plantas
+distancias = matrix(0, nrow = nrow(coordenadas), ncol = nrow(coordenadas))
+for (i in 1:nrow(coordenadas)) {
+  for (j in 1:nrow(coordenadas)) {
+    distancias[i, j] = haversine(
+      coordenadas$Latitud[i],
+      coordenadas$Longitud[i],
+      coordenadas$Latitud[j],
+      coordenadas$Longitud[j]
+    )
+  }
+}
+  
+# Leer los datos desde el archivo CSV
+datos_etapa4 <- read.csv("datosetapa4.csv")
+  
+# Combinar los datos de etapa 3 con las coordenadas por la columna "Planta"
+datos_completos <- left_join(datos_etapa4, coordenadas, by = "Planta")
+  
+# Coordenadas geográficas del aeropuerto
+aeropuerto = data.frame(
+  Latitud = 25.7785,
+  Longitud = -100.1068
+)
+  
+# Función para calcular las distancias utilizando la función haversine
+calcular_distancias = function(df) {
+  df$Distancia = apply(df[, c("Latitud", "Longitud")], 1, function(x) {
+    if (x[1] >= -90 && x[1] <= 90 && x[2] >= -180 && x[2] <= 180) {
+      haversine(x[1], x[2], aeropuerto$Latitud, aeropuerto$Longitud)
+    } else {
+      NA  # Si las coordenadas son inválidas, establecer la distancia como NA
+    }
+  })
+  return(df)
+}
+  
+# Calcular distancias y agregarlas al dataframe completo
+datos_completos = calcular_distancias(datos_completos)
+  
+# Ajustar un modelo de regresión lineal
+ modelo = lm(NOX ~ Distancia, data = datos_completos)
+  
+# Resumen del modelo
+summary(modelo)
+  
+# Calcular los promedios de emisiones de cada planta
+promedios_planta = datos_completos %>%
+  group_by(Planta) %>%
+  summarize(Promedio_NOx = mean(NOX, na.rm = TRUE))
+  
+promedios_planta
+  
+# Graficar la relación entre NOx y Distancia con colores por planta y promedios
+ggplot() +
+  geom_point(data = datos_completos, aes(x = Distancia, y = NOX, color = as.factor(Planta))) +
+    geom_smooth(data = datos_completos, aes(x = Distancia, y = NOX, color = as.factor(Planta)), method = "lm", se = FALSE) +
+    labs(x = "Distancia a la estación (km)", y = "Concentración de NOx") +
+    ggtitle("Relación entre NOx y Distancia a la estación meteorológica en Apodaca") +
+    scale_color_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black")) +
+    geom_text(data = promedios_planta, aes(x = max(datos_completos$Distancia), y = Promedio_NOx, label = round(Promedio_NOx, 2)), vjust = -0.5, hjust = -0.5, size = 3, color = "black")+ geom_hline(data = promedios_planta, aes(yintercept = Promedio_NOx, color = as.factor(Planta)), linetype = "dashed") +
+    scale_color_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"))+scale_color_manual(
+    values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"),
+    labels = nombres_plantas
+  )
+```
+
+```{r}
+# Nuevo csv con la base de datos que incluye las distancias de Haversine
+write.csv(datos_completos, file = "DataSet3.csv",row.names = FALSE)
+m1 = read.csv("DataSet3.csv")
+head(m1)
+```
+
+```{r}
+# Nuevo df que incluya sólo las variables NOX, Planta y Distancia, pues son las de nuestro interés para este análisis
+m2 = m1[, c("NOX", "Planta","Distancia")]
+head(m2)
+```
+
+```{r}
+# Transformación de BOXCOX para la variable NOX, pues no cumple con normalidad
+NOX = m2$NOX
+bNOX = boxcox(lm(NOX~1))
+lambdaNOX = bNOX$x[which.max(bNOX$y)]
+newNOX = (NOX ^lambdaNOX-1)/lambdaNOX
+data.frame(newNOX)
+```
+
+```{r}
+# Actualizar la columna "NOX" en el dataframe m2 con los nuevos valores transformados
+m2$NOX = newNOX
+m2
+```
+
+```{r}
+# Grafica usando los datos transformados y eliminando outliers
+
+# Calcular el IQR de la columna "NOX"
+Q1 = quantile(m2$NOX, 0.25)
+Q3 = quantile(m2$NOX, 0.75)
+IQR = Q3 - Q1
+
+# Definir límites para detectar outliers
+lower_limit = Q1 - 1.5 * IQR
+upper_limit = Q3 + 1.5 * IQR
+
+# Filtrar los datos para eliminar outliers
+m2 = m2 %>% filter(NOX >= lower_limit & NOX <= upper_limit)
+nombres_plantas = c("Apodaca", "Escobedo", "Garcia", "San Pedro", "Santa Catarina")
+# Ahora puedes proceder a crear la gráfica sin outliers
+ggplot(data = m2, aes(x = Distancia, y = NOX, color = as.factor(Planta))) +
+  geom_point() +
+  geom_smooth(method = "glm", se = FALSE) +
+  labs(x = "Distancia a la estación (km)", y = "Concentración de NOx") +
+  ggtitle("Relación entre NOx y Distancias entre las estaciones y el aeropuerto") +
+  scale_color_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black")) +
+  geom_text(data = promedios_planta, aes(x = max(m2$Distancia), y = Promedio_NOx, label = round(Promedio_NOx, 2)), vjust = -0.5, hjust = -0.5, size = 3, color = "black") +
+  geom_hline(data = promedios_planta, aes(yintercept = Promedio_NOx, color = as.factor(Planta)), linetype = "dashed") +
+  scale_color_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"))+scale_color_manual(
+    values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"),
+    labels = nombres_plantas
+  )
+```
+
+```{r}
+# Gráfico de violín para visualizar distribuciones
+
+library(ggplot2)
+promedios_planta = m2 %>%
+  group_by(Planta) %>%
+  summarize(Promedio_NOx = mean(NOX, na.rm = TRUE))
+# Crear la gráfica de violín
+ggplot(data = m2, aes(x = as.factor(Planta), y = NOX, fill = as.factor(Planta))) +
+  geom_violin() +
+  labs(x = "Planta", y = "Concentración de NOx") +
+  ggtitle("Distribución de NOx por Planta en Apodaca") +
+  scale_fill_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"))+geom_hline(data = promedios_planta, aes(yintercept = Promedio_NOx, color = as.factor(Planta)), linetype = "dashed") +
+  scale_color_manual(values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"))+scale_color_manual(
+    values = c("1" = "blue", "2" = "green", "3" = "orange", "4" = "red", "5" = "black"),
+    labels = nombres_plantas
+  )
+```
+
+### Regresión múltiple (modelo no utilizado en el análisis final)
+
+$H_0:$ No hay relación lineal significativa entre la variable dependiente y las variables predictoras.
+
+$H_1:$ Al menos una de las variables predictoras tiene relación significativa con la variable dependiente.
+
+```{r}
+# Nombramiento de variables a utilizar
+Y = m$Planta
+X1 = df$NOX
+X2 = df$O3
+X3 = df$PM10
+X4 = df$RH
+X5 = df$SR
+X6 = df$TOUT
+X7 = df$WSR
+X8 = df$WDR
+```
+
+```{r}
+# Regresión múltiple 
+reg = lm(Y~ X1 + X3 + X5 + X8)
+summary(reg)
+cat ("El modelo de regresión es Y = ", reg$coefficients[1], "+", reg$coefficients[2], "X1 +", reg$coefficients[3], "X3 +", reg$coefficients[4], "X5 +", reg$coefficients[5], "X8")
+```
+
+Como el p-value es menor que 0.05, se rechaza la hipótesis nula, por lo que hay evidencia suficiente para suponer que al menos una de las variables predictoras tiene relación significativa con la variable dependiente. Sin embargo, el modelo explica el 9.7% de la varianza total, lo que lo hace un modelo no significativo.
+
+Verificación del modelo:
+
+-   Media cero:
+
+    $H_0:\mu_r=0$
+
+    $H_1: \mu_r\neq 0$
+
+```{r}
+prueba = t.test(reg$residuals, mu = 0, conf.level = 0.95, alternative = "two.sided")
+prueba
+```
+
+No se rechaza la hipótesis nula por lo que se puede decir que la media de los residuales es cero.
+
+-   Homocedasticidad
+
+    ```{r}
+    plot(reg$fitted.values, reg$residuals, col = "blue")
+    abline(h=0, col = "red")
+    ```
+
+    No se aprecia total homogeneidad en la distribución de los residuales alrededor de la media
+
+-   Normalidad de los residuos
+
+    ```{r}
+    qqnorm(reg$residuals)
+    qqline(reg$residuals)
+    ```
+
+Como se puede observar, los datos no presentan aparente normalidad en la gráfica Q-Q, pues las observaciones no se ajustan bien a la recta.
+
+### ANOVA (modelo no utilizado en el análisis final)
+
+Prueba de hipótesis:
+
+$H_0:$ Las medias de los grupos son todas iguales
+
+$H_1:$ Las medias de los grupos no son todas iguales
+
+Cálculo de medias por planta:
+
+```{r}
+aggregate(. ~ m$Planta, data = df, FUN = mean)
+```
+
+Implementación del modelo:
+
+```{r}
+anova = aov(Y ~., data = df)
+summary(anova)
+```
+
+Como los p-values son menores a 0.05, se rechaza la hipótesis nula, por lo que hay evidencia sucifiente para suponer que las medias de los grupos no son todas iguales, o que al menos hay una que no lo es.
+
+**Boxplots por Componente:**
+
+```{r}
+par(mfrow=c(2,4))
+boxplot(formula = NOX~Planta, data = m)
+boxplot(formula = O3~Planta, data = m)
+boxplot(formula = PM10~Planta, data = m)
+boxplot(formula = RH~Planta, data = m)
+boxplot(formula = SR~Planta, data = m)
+boxplot(formula = TOUT~Planta, data = m)
+boxplot(formula = WSR~Planta, data = m)
+boxplot(formula = WDR~Planta, data = m)
+```
+
+Gráficos para validación del modelo:
+
+```{r}
+plot(anova)
+```
